@@ -1,0 +1,130 @@
+# Пример конфигурационного файла для алгоритмической торговой системы
+# ЗАМЕНИТЕ значения на реальные для использования
+
+# Настройки рисков
+risk:
+  risk_per_trade: 3.0           # Риск на сделку в процентах
+  max_daily_risk: 10.0           # Максимальный дневной риск
+  max_position_size: 10000      # Максимальный размер позиции в USDT
+  min_position_size: 10         # Минимальный размер позиции в USDT
+  
+  stop_loss:
+    atr_multiplier: 3.0         # Множитель ATR для стоп-лосса
+    min_percent: 0.5            # Минимальный процент стоп-лосса
+    max_percent: 5.0            # Максимальный процент стоп-лосса
+    
+  take_profit:
+    rr_ratio: 2.1               # Соотношение риск/прибыль
+    atr_multiplier: 3.0         # Множитель ATR для тейк-профита
+
+# Настройки данных
+data:
+  default_exchange: binance     # Основная биржа
+  backup_exchanges:             # Резервные биржи
+    - bybit
+    - kucoin
+    
+  cache:
+    enabled: true
+    ttl: 60                     # Время жизни кэша в секундах
+    max_size_mb: 100            # Максимальный размер кэша
+    
+  symbols:                      # Список торговых пар
+    - BTC/USDT
+    - ETH/USDT
+    - BNB/USDT
+    
+  timeframes:                   # Используемые таймфреймы
+    - 5m
+    - 15m
+    - 1h
+
+# Настройки исполнения
+execution:
+  default_order_type: limit     # Тип ордера по умолчанию
+  max_slippage_bps: 10          # Максимальное проскальзывание (basis points)
+  
+  limits:
+    max_orders_per_minute: 30   # Максимальное количество ордеров в минуту
+    max_notional_per_day: 100000 # Максимальный объем за день
+    
+  fees:
+    maker: 0.001                # Комиссия мейкера (0.1%)
+    taker: 0.001                # Комиссия тейкера (0.1%)
+
+# Настройки стратегий
+strategies:
+  simple_ma:
+    enabled: true
+    parameters:
+      fast_period: 9
+      slow_period: 21
+      min_volume: 1000000
+      
+  breakout:
+    enabled: false
+    parameters:
+      lookback_period: 20
+      min_breakout_percent: 1.0
+
+# Настройки мониторинга
+monitoring:
+  logging:
+    level: INFO                 # Уровень логирования
+    file: logs/trading.log      # Файл логов
+    max_size_mb: 100            # Максимальный размер файла логов
+    
+  metrics:
+    enabled: true
+    port: 9090                  # Порт для Prometheus метрик
+    
+  alerts:
+    enabled: true
+    telegram:
+      bot_token: "YOUR_BOT_TOKEN"  # Токен бота Telegram
+      chat_id: "YOUR_CHAT_ID"      # ID чата
+
+# Настройки базы данных
+database:
+  type: sqlite                  # Тип базы данных
+  path: data/trades.db          # Путь к файлу базы данных
+  
+  tables:
+    trades:
+      name: trades
+      columns:
+        - id
+        - symbol
+        - side
+        - entry_price
+        - exit_price
+        - pnl
+        - timestamp
+        
+    signals:
+      name: signals
+      columns:
+        - id
+        - strategy
+        - symbol
+        - signal
+        - confidence
+        - timestamp
+
+# Настройки API (заполните своими данными)
+api:
+  binance:
+    api_key: "YOUR_API_KEY_HERE"
+    api_secret: "YOUR_API_SECRET_HERE"
+    testnet: false
+    
+  bybit:
+    api_key: ""
+    api_secret: ""
+    testnet: true
+
+# Настройки безопасности
+security:
+  encrypt_secrets: true         # Шифрование секретов
+  two_factor_auth: false        # Двухфакторная аутентификация
+  ip_whitelist: []              # Список разрешенных IP-адресов
