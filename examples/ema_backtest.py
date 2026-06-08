@@ -20,12 +20,18 @@ def load_data(ticker: str = "BTC-USD",
     try:
         import yfinance as yf
         df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-        df.columns = [c.lower() for c in df.columns]
+        # yfinance >= 0.2.x returns MultiIndex columns — flatten them
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [c[0].lower() for c in df.columns]
+        else:
+            df.columns = [c.lower() for c in df.columns]
         df = df[["open", "high", "low", "close", "volume"]].dropna()
+        if df.empty:
+            raise ValueError("Empty dataframe returned")
         print(f"Downloaded {len(df)} bars for {ticker} from Yahoo Finance")
         return df
     except Exception as e:
-        print(f"yfinance failed ({e}), using synthetic data")
+        print(f"yfinance unavailable ({e}), using synthetic data")
         return _synthetic_btc(start, end)
 
 
@@ -117,21 +123,23 @@ def run_backtest(df: pd.DataFrame,
     atr_vals = atr(highs, lows, closes, 14)
     vol_ma   = pd.Series(volumes).rolling(20).mean().values
 
-    equity = np.full(len(closes), capital)
-    position   = 0          # +1 long, -1 short, 0 flat
+    cur_capital = capital
+    equity      = np.full(len(closes), capital)
+    position    = 0       # +1 long, -1 short, 0 flat
     entry_price = 0.0
     trades: list = []
 
     warmup = max(slow, rsi_period, 20) + 2
 
     for i in range(warmup, len(closes)):
-        price = closes[i]
+        price      = closes[i]
         cross_now  = fast_ema[i]     - slow_ema[i]
         cross_prev = fast_ema[i - 1] - slow_ema[i - 1]
         curr_rsi   = rsi_vals[i]
-        vol_ok     = volumes[i] > vol_ma[i] * vol_mult if not np.isnan(vol_ma[i]) else False
+        vol_ok     = (volumes[i] > vol_ma[i] * vol_mult
+                      if not np.isnan(vol_ma[i]) else False)
 
-        # ── exit conditions ───────────────────────────────────────────────
+        # ── exit ─────────────────────────────────────────────────────────
         if position != 0:
             stop_dist = atr_vals[i] * atr_stop
             hit_stop = (
@@ -143,33 +151,29 @@ def run_backtest(df: pd.DataFrame,
                 (position == -1 and cross_prev <= 0 and cross_now > 0)
             )
             if hit_stop or reverse:
-                pnl_pct = position * (price / entry_price - 1) - commission
-                equity[i] = equity[i - 1] * (1 + pnl_pct)
+                pnl_pct     = position * (price / entry_price - 1) - commission
+                cur_capital *= (1 + pnl_pct)
                 trades.append({"entry": entry_price, "exit": price,
                                 "side": position, "pnl_pct": pnl_pct * 100})
                 position = 0
-            else:
-                equity[i] = equity[i - 1]
 
-        # ── entry conditions ──────────────────────────────────────────────
+        # ── entry ─────────────────────────────────────────────────────────
         if position == 0:
             if (cross_prev <= 0 and cross_now > 0
                     and not np.isnan(curr_rsi)
                     and curr_rsi < rsi_ob
                     and vol_ok):
-                position = 1
+                position    = 1
                 entry_price = price * (1 + commission)
-                equity[i] = equity[i - 1]
 
             elif (cross_prev >= 0 and cross_now < 0
                     and not np.isnan(curr_rsi)
                     and curr_rsi > rsi_os
                     and vol_ok):
-                position = -1
+                position    = -1
                 entry_price = price * (1 - commission)
-                equity[i] = equity[i - 1]
-            else:
-                equity[i] = equity[i - 1]
+
+        equity[i] = cur_capital
 
     eq = pd.Series(equity, index=df.index)
     ret = eq.pct_change().dropna()
@@ -193,9 +197,9 @@ def run_backtest(df: pd.DataFrame,
 # ── reporting ─────────────────────────────────────────────────────────────────
 
 def print_results(label: str, res: dict):
-    print(f"\n{'─'*40}")
+    print(f"\n" + "-"*40)
     print(f" {label}")
-    print(f"{'─'*40}")
+    print("-"*40)
     print(f"  Total return : {res['total_return']:+.1f}%")
     print(f"  Sharpe ratio : {res['sharpe']:.3f}")
     print(f"  Max drawdown : {res['max_dd']:.1f}%")
@@ -210,12 +214,12 @@ def ascii_equity(equity: pd.Series, width: int = 60, height: int = 12):
     norm = ((vals - mn) / (mx - mn) * (height - 1)).astype(int)
     step = max(1, len(vals) // width)
     sampled = norm[::step][:width]
-    print(f"\n  Equity curve  ({equity.index[0].date()} → {equity.index[-1].date()})")
-    print(f"  ${mx:,.0f} ┐")
+    print(f"\n  Equity curve  ({equity.index[0].date()} to {equity.index[-1].date()})")
+    print(f"  ${mx:,.0f} |")
     for row in range(height - 1, -1, -1):
-        line = "".join("█" if v >= row else " " for v in sampled)
-        print(f"         │{line}")
-    print(f"  ${mn:,.0f} └" + "─" * width)
+        line = "".join("#" if v >= row else " " for v in sampled)
+        print(f"         |{line}")
+    print(f"  ${mn:,.0f} +" + "-" * width)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -231,21 +235,21 @@ if __name__ == "__main__":
     IS  = df["2020-01-01":"2022-12-31"]
     OOS = df["2023-01-01":"2024-12-31"]
 
-    print(f"\n  Strategy : EMA({FAST},{SLOW}) + RSI(14) filter + Volume(1.5×) confirmation")
+    print(f"\n  Strategy : EMA({FAST},{SLOW}) + RSI(14) filter + Volume(1.5x) confirmation")
     print(f"  Asset    : BTC-USD daily")
     print(f"  Costs    : 0.1% per trade (commission)")
 
     is_res  = run_backtest(IS,  **PARAMS)
     oos_res = run_backtest(OOS, **PARAMS)
 
-    print_results("IN-SAMPLE  (2020–2022)", is_res)
+    print_results("IN-SAMPLE  (2020-2022)", is_res)
     ascii_equity(is_res["equity"])
 
-    print_results("OUT-OF-SAMPLE  (2023–2024)", oos_res)
+    print_results("OUT-OF-SAMPLE  (2023-2024)", oos_res)
     ascii_equity(oos_res["equity"])
 
-    print(f"\n{'═'*40}")
+    print("\n" + "="*40)
     print("  NOTE: This is a demonstration of backtesting")
     print("  methodology. EMA crossover is a textbook")
     print("  strategy included to show the full pipeline.")
-    print(f"{'═'*40}\n")
+    print("="*40 + "\n")
