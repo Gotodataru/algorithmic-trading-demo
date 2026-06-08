@@ -40,8 +40,10 @@ logs/
 # Data files
 *.sqlite
 *.db
-*.csv
 *.json
+# CSV ignored except sample data
+*.csv
+!data/btc_daily.csv
 
 # API keys and secrets
 *_key.txt
